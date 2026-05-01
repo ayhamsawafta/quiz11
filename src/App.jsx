@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import "./index.css";
 
-const questions = [
+const rawQuestions = [
   {
     "unit": "المعجم العربي",
     "question": "ما الفرق الأدق بين المعجم والموسوعة؟",
@@ -603,6 +603,30 @@ const questions = [
     "explain": "الفهم أعمق لأنه يكشف المعنى والعلاقات لا يكتفي بترديد النص."
   }
 ];
+
+function shuffleQuestion(q) {
+  const arr = q.options.map((opt, i) => ({
+    text: opt,
+    correct: i === q.answer,
+  }));
+
+  // Fisher-Yates shuffle: خلط حقيقي بدون نمط A B C D
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+
+  return {
+    ...q,
+    options: arr.map((o) => o.text),
+    answer: arr.findIndex((o) => o.correct),
+  };
+}
+
+// يتم خلط الخيارات مرة واحدة عند تحميل الصفحة.
+// كل Refresh يعطي ترتيبًا جديدًا، بدون نمط ثابت.
+const questions = rawQuestions.map((q) => shuffleQuestion(q));
+
 
 const uniqueUnits = ["الكل", ...Array.from(new Set(questions.map((q) => q.unit)))];
 
