@@ -1,0 +1,898 @@
+//@version=6
+strategy(
+     title                  = "Gold Pro X v1 - Professional Strategy",
+     shorttitle             = "Gold Pro X v1",
+     overlay                = true,
+     pyramiding             = 0,
+     initial_capital        = 10000,
+     commission_type        = strategy.commission.percent,
+     commission_value       = 0.0,
+     slippage               = 0,
+     process_orders_on_close = true,
+     calc_on_order_fills    = true,
+     calc_on_every_tick     = false,
+     max_labels_count       = 500,
+     max_lines_count        = 500
+)
+
+//=====================================================================
+// 1. إعدادات المتوسطات
+//=====================================================================
+
+groupTrend = "1. Trend Filters"
+
+emaFastLength = input.int(
+     defval  = 20,
+     title   = "EMA Fast Length",
+     minval  = 1,
+     group   = groupTrend
+)
+
+emaSlowLength = input.int(
+     defval  = 50,
+     title   = "EMA Slow Length",
+     minval  = 1,
+     group   = groupTrend
+)
+
+emaTrendLength = input.int(
+     defval  = 200,
+     title   = "EMA Trend Length",
+     minval  = 1,
+     group   = groupTrend
+)
+
+//=====================================================================
+// 2. إعدادات RSI
+//=====================================================================
+
+groupRSI = "2. RSI Filter"
+
+rsiLength = input.int(
+     defval = 14,
+     title  = "RSI Length",
+     minval = 1,
+     group  = groupRSI
+)
+
+rsiBuyLevel = input.float(
+     defval = 55.0,
+     title  = "RSI Buy Level",
+     minval = 0.0,
+     maxval = 100.0,
+     step   = 0.5,
+     group  = groupRSI
+)
+
+rsiSellLevel = input.float(
+     defval = 45.0,
+     title  = "RSI Sell Level",
+     minval = 0.0,
+     maxval = 100.0,
+     step   = 0.5,
+     group  = groupRSI
+)
+
+//=====================================================================
+// 3. إعدادات MACD
+//=====================================================================
+
+groupMACD = "3. MACD Filter"
+
+macdFastLength = input.int(
+     defval = 12,
+     title  = "MACD Fast Length",
+     minval = 1,
+     group  = groupMACD
+)
+
+macdSlowLength = input.int(
+     defval = 26,
+     title  = "MACD Slow Length",
+     minval = 1,
+     group  = groupMACD
+)
+
+macdSignalLength = input.int(
+     defval = 9,
+     title  = "MACD Signal Length",
+     minval = 1,
+     group  = groupMACD
+)
+
+//=====================================================================
+// 4. إعدادات ATR وإدارة الصفقة
+//=====================================================================
+
+groupRisk = "4. Risk Management"
+
+atrLength = input.int(
+     defval = 14,
+     title  = "ATR Length",
+     minval = 1,
+     group  = groupRisk
+)
+
+stopATRMultiplier = input.float(
+     defval = 1.5,
+     title  = "Stop Loss ATR Multiplier",
+     minval = 0.1,
+     step   = 0.1,
+     group  = groupRisk
+)
+
+trailingATRMultiplier = input.float(
+     defval = 1.5,
+     title  = "Trailing Stop ATR Multiplier After TP2",
+     minval = 0.1,
+     step   = 0.1,
+     group  = groupRisk
+)
+
+riskPercent = input.float(
+     defval = 1.0,
+     title  = "Account Risk Per Trade %",
+     minval = 0.01,
+     maxval = 100.0,
+     step   = 0.1,
+     group  = groupRisk,
+     tooltip = "النسبة القصوى النظرية من رأس المال المعرضة للخسارة عند ضرب الوقف."
+)
+
+minimumQuantity = input.float(
+     defval = 0.01,
+     title  = "Minimum Order Quantity",
+     minval = 0.000001,
+     step   = 0.01,
+     group  = groupRisk
+)
+
+quantityStep = input.float(
+     defval = 0.01,
+     title  = "Order Quantity Step",
+     minval = 0.000001,
+     step   = 0.01,
+     group  = groupRisk,
+     tooltip = "مثال: استخدم 1 للأسهم، أو 0.01 لبعض عقود الذهب والعملات."
+)
+
+//=====================================================================
+// 5. إعدادات الجلسات
+//=====================================================================
+
+groupSessions = "5. Trading Sessions"
+
+useSessionFilter = input.bool(
+     defval = true,
+     title  = "Enable London / New York Filter",
+     group  = groupSessions
+)
+
+sessionTimezone = input.string(
+     defval  = "Etc/UTC",
+     title   = "Sessions Time Zone",
+     options = [
+         "Etc/UTC",
+         "Europe/London",
+         "America/New_York",
+         "Asia/Jerusalem"
+     ],
+     group = groupSessions
+)
+
+londonSession = input.session(
+     defval = "0700-1600",
+     title  = "London Session",
+     group  = groupSessions
+)
+
+newYorkSession = input.session(
+     defval = "1300-2200",
+     title  = "New York Session",
+     group  = groupSessions
+)
+
+//=====================================================================
+// 6. إعدادات العرض
+//=====================================================================
+
+groupDisplay = "6. Display Settings"
+
+showEMAs = input.bool(
+     defval = true,
+     title  = "Show EMA Lines",
+     group  = groupDisplay
+)
+
+showTradingZone = input.bool(
+     defval = true,
+     title  = "Show EMA 20/50 Trading Zone",
+     group  = groupDisplay
+)
+
+showTradeLevels = input.bool(
+     defval = true,
+     title  = "Show Stop Loss and Targets",
+     group  = groupDisplay
+)
+
+showSignalLabels = input.bool(
+     defval = true,
+     title  = "Show Buy / Sell Labels",
+     group  = groupDisplay
+)
+
+colorSessionBackground = input.bool(
+     defval = false,
+     title  = "Highlight Active Sessions",
+     group  = groupDisplay
+)
+
+//=====================================================================
+// 7. الحسابات الأساسية
+//=====================================================================
+
+ema20  = ta.ema(close, emaFastLength)
+ema50  = ta.ema(close, emaSlowLength)
+ema200 = ta.ema(close, emaTrendLength)
+
+rsiValue = ta.rsi(close, rsiLength)
+
+[macdLine, macdSignal, macdHistogram] = ta.macd(
+     close,
+     macdFastLength,
+     macdSlowLength,
+     macdSignalLength
+)
+
+atrValue = ta.atr(atrLength)
+
+//=====================================================================
+// 8. فلتر الجلسات
+//=====================================================================
+
+insideLondon = not na(
+     time(
+         timeframe.period,
+         londonSession,
+         sessionTimezone
+     )
+)
+
+insideNewYork = not na(
+     time(
+         timeframe.period,
+         newYorkSession,
+         sessionTimezone
+     )
+)
+
+insideAllowedSession = not useSessionFilter or insideLondon or insideNewYork
+
+//=====================================================================
+// 9. شروط الاتجاه والزخم
+//=====================================================================
+
+bullishTrend =
+     close > ema200 and
+     ema20 > ema200 and
+     ema50 > ema200
+
+bearishTrend =
+     close < ema200 and
+     ema20 < ema200 and
+     ema50 < ema200
+
+bullishRSI = rsiValue > rsiBuyLevel
+bearishRSI = rsiValue < rsiSellLevel
+
+bullishMACD =
+     macdLine > macdSignal and
+     macdHistogram > 0
+
+bearishMACD =
+     macdLine < macdSignal and
+     macdHistogram < 0
+
+bullishCross = ta.crossover(ema20, ema50)
+bearishCross = ta.crossunder(ema20, ema50)
+
+//=====================================================================
+// 10. منع إعادة الرسم
+//=====================================================================
+
+// لا يتم اعتماد الإشارة إلا بعد إغلاق الشمعة بالكامل.
+confirmedBar = barstate.isconfirmed
+
+enoughData =
+     not na(ema20) and
+     not na(ema50) and
+     not na(ema200) and
+     not na(rsiValue) and
+     not na(macdHistogram) and
+     not na(atrValue)
+
+//=====================================================================
+// 11. شروط الدخول
+//=====================================================================
+
+longCondition =
+     confirmedBar and
+     enoughData and
+     insideAllowedSession and
+     bullishTrend and
+     bullishCross and
+     bullishRSI and
+     bullishMACD and
+     strategy.position_size == 0
+
+shortCondition =
+     confirmedBar and
+     enoughData and
+     insideAllowedSession and
+     bearishTrend and
+     bearishCross and
+     bearishRSI and
+     bearishMACD and
+     strategy.position_size == 0
+
+//=====================================================================
+// 12. متغيرات إدارة الصفقة
+//=====================================================================
+
+var float tradeEntryPrice = na
+var float originalStopPrice = na
+var float activeStopPrice = na
+
+var float target1Price = na
+var float target2Price = na
+var float target3Price = na
+
+var float tradeRiskDistance = na
+var float entryATR = na
+
+var float highestAfterTP2 = na
+var float lowestAfterTP2 = na
+
+var bool tp1Reached = false
+var bool tp2Reached = false
+var bool tp3Reached = false
+
+var bool longTrade = false
+var bool shortTrade = false
+
+var bool buyAlertSignal = false
+var bool sellAlertSignal = false
+var bool tpHitAlertSignal = false
+var bool stopHitAlertSignal = false
+
+// إعادة تعيين إشارات التنبيه في بداية كل شمعة.
+buyAlertSignal := false
+sellAlertSignal := false
+tpHitAlertSignal := false
+stopHitAlertSignal := false
+
+//=====================================================================
+// 13. حساب حجم الصفقة حسب المخاطرة
+//=====================================================================
+
+calculatePositionQuantity(float stopDistance) =>
+    pointValue = math.max(syminfo.pointvalue, 0.0000001)
+
+    riskCash =
+         strategy.equity *
+         (riskPercent / 100.0)
+
+    rawQuantity =
+         riskCash /
+         math.max(stopDistance * pointValue, syminfo.mintick)
+
+    roundedQuantity =
+         math.floor(rawQuantity / quantityStep) *
+         quantityStep
+
+    math.max(roundedQuantity, minimumQuantity)
+
+//=====================================================================
+// 14. تنفيذ صفقة الشراء
+//=====================================================================
+
+if longCondition
+    entryATR := atrValue
+
+    tradeEntryPrice := close
+    tradeRiskDistance := entryATR * stopATRMultiplier
+
+    originalStopPrice :=
+         tradeEntryPrice -
+         tradeRiskDistance
+
+    activeStopPrice := originalStopPrice
+
+    target1Price :=
+         tradeEntryPrice +
+         tradeRiskDistance
+
+    target2Price :=
+         tradeEntryPrice +
+         tradeRiskDistance * 2.0
+
+    target3Price :=
+         tradeEntryPrice +
+         tradeRiskDistance * 3.0
+
+    positionQuantity =
+         calculatePositionQuantity(tradeRiskDistance)
+
+    tp1Reached := false
+    tp2Reached := false
+    tp3Reached := false
+
+    highestAfterTP2 := na
+    lowestAfterTP2 := na
+
+    longTrade := true
+    shortTrade := false
+
+    strategy.entry(
+         id        = "Long",
+         direction = strategy.long,
+         qty       = positionQuantity,
+         comment   = "Gold Pro X Buy"
+    )
+
+    buyAlertSignal := true
+
+//=====================================================================
+// 15. تنفيذ صفقة البيع
+//=====================================================================
+
+if shortCondition
+    entryATR := atrValue
+
+    tradeEntryPrice := close
+    tradeRiskDistance := entryATR * stopATRMultiplier
+
+    originalStopPrice :=
+         tradeEntryPrice +
+         tradeRiskDistance
+
+    activeStopPrice := originalStopPrice
+
+    target1Price :=
+         tradeEntryPrice -
+         tradeRiskDistance
+
+    target2Price :=
+         tradeEntryPrice -
+         tradeRiskDistance * 2.0
+
+    target3Price :=
+         tradeEntryPrice -
+         tradeRiskDistance * 3.0
+
+    positionQuantity =
+         calculatePositionQuantity(tradeRiskDistance)
+
+    tp1Reached := false
+    tp2Reached := false
+    tp3Reached := false
+
+    highestAfterTP2 := na
+    lowestAfterTP2 := na
+
+    longTrade := false
+    shortTrade := true
+
+    strategy.entry(
+         id        = "Short",
+         direction = strategy.short,
+         qty       = positionQuantity,
+         comment   = "Gold Pro X Sell"
+    )
+
+    sellAlertSignal := true
+
+//=====================================================================
+// 16. إدارة صفقة الشراء
+//=====================================================================
+
+if strategy.position_size > 0 and longTrade
+    // الهدف الأول.
+    if not tp1Reached and high >= target1Price
+        tp1Reached := true
+        tpHitAlertSignal := true
+
+        // نقل الوقف إلى نقطة الدخول بعد TP1.
+        activeStopPrice :=
+             math.max(
+                 activeStopPrice,
+                 tradeEntryPrice
+             )
+
+    // الهدف الثاني.
+    if not tp2Reached and high >= target2Price
+        tp2Reached := true
+        tpHitAlertSignal := true
+        highestAfterTP2 := high
+
+    // تفعيل التريلينغ بعد TP2.
+    if tp2Reached
+        highestAfterTP2 :=
+             na(highestAfterTP2) ?
+             high :
+             math.max(highestAfterTP2, high)
+
+        longTrailingStop =
+             highestAfterTP2 -
+             atrValue * trailingATRMultiplier
+
+        activeStopPrice :=
+             math.max(
+                 activeStopPrice,
+                 longTrailingStop
+             )
+
+    // الهدف الثالث.
+    if not tp3Reached and high >= target3Price
+        tp3Reached := true
+        tpHitAlertSignal := true
+
+    // اكتشاف وصول السعر إلى الوقف الحالي.
+    if low <= activeStopPrice
+        stopHitAlertSignal := true
+
+    // تقسيم الصفقة إلى ثلاثة أهداف.
+    strategy.exit(
+         id           = "Long TP1",
+         from_entry   = "Long",
+         limit        = target1Price,
+         stop         = activeStopPrice,
+         qty_percent  = 33,
+         comment_profit = "TP1 Hit",
+         comment_loss   = "Long Stop Hit"
+    )
+
+    strategy.exit(
+         id           = "Long TP2",
+         from_entry   = "Long",
+         limit        = target2Price,
+         stop         = activeStopPrice,
+         qty_percent  = 33,
+         comment_profit = "TP2 Hit",
+         comment_loss   = "Long Stop Hit"
+    )
+
+    strategy.exit(
+         id           = "Long TP3",
+         from_entry   = "Long",
+         limit        = target3Price,
+         stop         = activeStopPrice,
+         qty_percent  = 34,
+         comment_profit = "TP3 Hit",
+         comment_loss   = "Long Stop Hit"
+    )
+
+//=====================================================================
+// 17. إدارة صفقة البيع
+//=====================================================================
+
+if strategy.position_size < 0 and shortTrade
+    // الهدف الأول.
+    if not tp1Reached and low <= target1Price
+        tp1Reached := true
+        tpHitAlertSignal := true
+
+        // نقل الوقف إلى نقطة الدخول بعد TP1.
+        activeStopPrice :=
+             math.min(
+                 activeStopPrice,
+                 tradeEntryPrice
+             )
+
+    // الهدف الثاني.
+    if not tp2Reached and low <= target2Price
+        tp2Reached := true
+        tpHitAlertSignal := true
+        lowestAfterTP2 := low
+
+    // تفعيل التريلينغ بعد TP2.
+    if tp2Reached
+        lowestAfterTP2 :=
+             na(lowestAfterTP2) ?
+             low :
+             math.min(lowestAfterTP2, low)
+
+        shortTrailingStop =
+             lowestAfterTP2 +
+             atrValue * trailingATRMultiplier
+
+        activeStopPrice :=
+             math.min(
+                 activeStopPrice,
+                 shortTrailingStop
+             )
+
+    // الهدف الثالث.
+    if not tp3Reached and low <= target3Price
+        tp3Reached := true
+        tpHitAlertSignal := true
+
+    // اكتشاف وصول السعر إلى الوقف الحالي.
+    if high >= activeStopPrice
+        stopHitAlertSignal := true
+
+    // تقسيم الصفقة إلى ثلاثة أهداف.
+    strategy.exit(
+         id           = "Short TP1",
+         from_entry   = "Short",
+         limit        = target1Price,
+         stop         = activeStopPrice,
+         qty_percent  = 33,
+         comment_profit = "TP1 Hit",
+         comment_loss   = "Short Stop Hit"
+    )
+
+    strategy.exit(
+         id           = "Short TP2",
+         from_entry   = "Short",
+         limit        = target2Price,
+         stop         = activeStopPrice,
+         qty_percent  = 33,
+         comment_profit = "TP2 Hit",
+         comment_loss   = "Short Stop Hit"
+    )
+
+    strategy.exit(
+         id           = "Short TP3",
+         from_entry   = "Short",
+         limit        = target3Price,
+         stop         = activeStopPrice,
+         qty_percent  = 34,
+         comment_profit = "TP3 Hit",
+         comment_loss   = "Short Stop Hit"
+    )
+
+//=====================================================================
+// 18. إعادة تعيين بيانات الصفقة بعد الإغلاق
+//=====================================================================
+
+positionJustClosed =
+     strategy.position_size == 0 and
+     strategy.position_size[1] != 0
+
+if positionJustClosed
+    tradeEntryPrice := na
+    originalStopPrice := na
+    activeStopPrice := na
+
+    target1Price := na
+    target2Price := na
+    target3Price := na
+
+    tradeRiskDistance := na
+    entryATR := na
+
+    highestAfterTP2 := na
+    lowestAfterTP2 := na
+
+    tp1Reached := false
+    tp2Reached := false
+    tp3Reached := false
+
+    longTrade := false
+    shortTrade := false
+
+//=====================================================================
+// 19. المناطق المهمة للشراء والبيع
+//=====================================================================
+
+// المنطقة بين EMA 20 وEMA 50 تمثل منطقة التوازن الديناميكية.
+// تكون منطقة شراء عندما تكون أعلى EMA 200.
+// وتكون منطقة بيع عندما تكون أسفل EMA 200.
+
+fastEMAPlot = plot(
+     showEMAs or showTradingZone ? ema20 : na,
+     title     = "EMA 20",
+     color     = color.new(color.aqua, 0),
+     linewidth = 2
+)
+
+slowEMAPlot = plot(
+     showEMAs or showTradingZone ? ema50 : na,
+     title     = "EMA 50",
+     color     = color.new(color.orange, 0),
+     linewidth = 2
+)
+
+plot(
+     showEMAs ? ema200 : na,
+     title     = "EMA 200",
+     color     = color.new(color.white, 0),
+     linewidth = 3
+)
+
+zoneColor =
+     bullishTrend ?
+     color.new(color.green, 85) :
+     bearishTrend ?
+     color.new(color.red, 85) :
+     color.new(color.gray, 92)
+
+fill(
+     fastEMAPlot,
+     slowEMAPlot,
+     color = showTradingZone ? zoneColor : na,
+     title = "Dynamic Buy / Sell Zone"
+)
+
+//=====================================================================
+// 20. عرض مستويات الصفقة
+//=====================================================================
+
+plot(
+     showTradeLevels and strategy.position_size != 0 ?
+     tradeEntryPrice :
+     na,
+     title     = "Entry Price",
+     color     = color.new(color.blue, 0),
+     linewidth = 2,
+     style     = plot.style_linebr
+)
+
+plot(
+     showTradeLevels and strategy.position_size != 0 ?
+     activeStopPrice :
+     na,
+     title     = "Active Stop Loss",
+     color     = color.new(color.red, 0),
+     linewidth = 2,
+     style     = plot.style_linebr
+)
+
+plot(
+     showTradeLevels and strategy.position_size != 0 ?
+     target1Price :
+     na,
+     title     = "TP1 - 1R",
+     color     = color.new(color.green, 15),
+     linewidth = 1,
+     style     = plot.style_linebr
+)
+
+plot(
+     showTradeLevels and strategy.position_size != 0 ?
+     target2Price :
+     na,
+     title     = "TP2 - 2R",
+     color     = color.new(color.green, 5),
+     linewidth = 2,
+     style     = plot.style_linebr
+)
+
+plot(
+     showTradeLevels and strategy.position_size != 0 ?
+     target3Price :
+     na,
+     title     = "TP3 - 3R",
+     color     = color.new(color.lime, 0),
+     linewidth = 2,
+     style     = plot.style_linebr
+)
+
+//=====================================================================
+// 21. إشارات الدخول على الرسم
+//=====================================================================
+
+plotshape(
+     showSignalLabels and longCondition,
+     title     = "Buy Signal",
+     text      = "BUY",
+     style     = shape.labelup,
+     location  = location.belowbar,
+     color     = color.new(color.green, 0),
+     textcolor = color.white,
+     size      = size.small
+)
+
+plotshape(
+     showSignalLabels and shortCondition,
+     title     = "Sell Signal",
+     text      = "SELL",
+     style     = shape.labeldown,
+     location  = location.abovebar,
+     color     = color.new(color.red, 0),
+     textcolor = color.white,
+     size      = size.small
+)
+
+//=====================================================================
+// 22. خلفية الجلسات
+//=====================================================================
+
+activeSessionColor =
+     insideLondon and insideNewYork ?
+     color.new(color.purple, 92) :
+     insideLondon ?
+     color.new(color.blue, 94) :
+     insideNewYork ?
+     color.new(color.orange, 94) :
+     na
+
+bgcolor(
+     colorSessionBackground and useSessionFilter ?
+     activeSessionColor :
+     na,
+     title = "Trading Session Background"
+)
+
+//=====================================================================
+// 23. التنبيهات
+//=====================================================================
+
+alertcondition(
+     condition = buyAlertSignal,
+     title     = "Gold Pro X - Buy Alert",
+     message   = "Gold Pro X BUY | {{ticker}} | Price: {{close}} | Timeframe: {{interval}}"
+)
+
+alertcondition(
+     condition = sellAlertSignal,
+     title     = "Gold Pro X - Sell Alert",
+     message   = "Gold Pro X SELL | {{ticker}} | Price: {{close}} | Timeframe: {{interval}}"
+)
+
+alertcondition(
+     condition = tpHitAlertSignal,
+     title     = "Gold Pro X - TP Hit",
+     message   = "Gold Pro X TARGET HIT | {{ticker}} | Price: {{close}} | Timeframe: {{interval}}"
+)
+
+alertcondition(
+     condition = stopHitAlertSignal,
+     title     = "Gold Pro X - Stop Loss Hit",
+     message   = "Gold Pro X STOP LOSS HIT | {{ticker}} | Price: {{close}} | Timeframe: {{interval}}"
+)
+
+// تنبيهات مباشرة اختيارية عند إنشاء تنبيه من نوع:
+// Any alert() function call
+
+if buyAlertSignal
+    alert(
+         "Gold Pro X BUY | " +
+         syminfo.ticker +
+         " | Entry: " +
+         str.tostring(tradeEntryPrice, format.mintick) +
+         " | Stop: " +
+         str.tostring(activeStopPrice, format.mintick),
+         alert.freq_once_per_bar_close
+    )
+
+if sellAlertSignal
+    alert(
+         "Gold Pro X SELL | " +
+         syminfo.ticker +
+         " | Entry: " +
+         str.tostring(tradeEntryPrice, format.mintick) +
+         " | Stop: " +
+         str.tostring(activeStopPrice, format.mintick),
+         alert.freq_once_per_bar_close
+    )
+
+if tpHitAlertSignal
+    alert(
+         "Gold Pro X TARGET HIT | " +
+         syminfo.ticker +
+         " | Price: " +
+         str.tostring(close, format.mintick),
+         alert.freq_once_per_bar_close
+    )
+
+if stopHitAlertSignal
+    alert(
+         "Gold Pro X STOP HIT | " +
+         syminfo.ticker +
+         " | Stop: " +
+         str.tostring(activeStopPrice, format.mintick),
+         alert.freq_once_per_bar_close
+    )
